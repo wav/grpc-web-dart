@@ -54,7 +54,18 @@ func main() {
 
 	wrappedServer := grpcweb.WrapServer(grpcServer)
 	handler := func(resp http.ResponseWriter, req *http.Request) {
-		println(req.RequestURI)
+		method := req.RequestURI[strings.LastIndex(req.RequestURI, "/"):]
+		print("\033[H\033[2J") // clear
+		print("\033[H\033[3J") // reset scroll (CMD+K)
+		print(method)
+		ctx, _ := context.WithDeadline(context.Background(), time.Now().Add(1*time.Second))
+		req = req.WithContext(ctx)
+		start := time.Now().UnixNano()
+		go func() {
+			<-req.Context().Done()
+			took := time.Now().UnixNano() - start
+			print(fmt.Sprintf(" %dms\n", time.Duration(took).Nanoseconds()/time.Millisecond.Nanoseconds()))
+		}()
 		wrappedServer.ServeHTTP(resp, req)
 	}
 
