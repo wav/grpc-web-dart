@@ -1,4 +1,5 @@
 import 'package:grpc/grpc.dart';
+import 'package:grpc_web/src/call.dart';
 
 class WebClientConnection extends ClientConnection {
   WebClientConnection(String host, int port, ChannelOptions options)
@@ -6,6 +7,6 @@ class WebClientConnection extends ClientConnection {
 
   @override
   void dispatchCall(ClientCall call) {
-    call.onConnectionReady(this);
+    (call as WebClientCall).onConnectionReady(this);
   }
 }

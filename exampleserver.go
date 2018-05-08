@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"reflect"
 	"time"
 
 	"google.golang.org/grpc"
@@ -15,6 +16,7 @@ import (
 
 	"strings"
 
+	proto "github.com/golang/protobuf/proto"
 	library "github.com/improbable-eng/grpc-web/example/go/_proto/examplecom/library"
 	"github.com/improbable-eng/grpc-web/go/grpcweb"
 	"golang.org/x/net/context"
@@ -37,7 +39,11 @@ func main() {
 	var unaryInterceptor grpc.UnaryServerInterceptor = func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
 		println("unary", info.FullMethod)
 		ctx, _ = context.WithDeadline(ctx, time.Now().Add(1*time.Second))
-		return handler(ctx, req)
+		println("REQ", reflect.TypeOf(req).String(), req.(proto.Message).String())
+		resp, err = handler(ctx, req)
+		data, _ := proto.Marshal(resp.(proto.Message))
+		println("RESP", reflect.TypeOf(resp).String(), fmt.Sprint(data), fmt.Sprint(err))
+		return resp, err
 	}
 
 	var streamInterceptor grpc.StreamServerInterceptor = func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
@@ -53,11 +59,12 @@ func main() {
 	grpclog.SetLogger(log.New(os.Stdout, "exampleserver: ", log.LstdFlags))
 
 	wrappedServer := grpcweb.WrapServer(grpcServer)
+	count := 0
 	handler := func(resp http.ResponseWriter, req *http.Request) {
 		method := req.RequestURI[strings.LastIndex(req.RequestURI, "/"):]
 		print("\033[H\033[2J") // clear
 		print("\033[H\033[3J") // reset scroll (CMD+K)
-		print(method)
+		println(fmt.Sprint(count) + " " + method)
 		ctx, _ := context.WithDeadline(context.Background(), time.Now().Add(1*time.Second))
 		req = req.WithContext(ctx)
 		start := time.Now().UnixNano()
@@ -65,6 +72,7 @@ func main() {
 			<-req.Context().Done()
 			took := time.Now().UnixNano() - start
 			print(fmt.Sprintf(" %dms\n", time.Duration(took).Nanoseconds()/time.Millisecond.Nanoseconds()))
+			count++
 		}()
 		wrappedServer.ServeHTTP(resp, req)
 	}
@@ -116,8 +124,6 @@ var books = []*library.Book{
 }
 
 func (s *bookService) GetBook(ctx context.Context, bookQuery *library.GetBookRequest) (*library.Book, error) {
-	println("GetBook:", bookQuery.Isbn)
-
 	grpc.SendHeader(ctx, metadata.Pairs("Pre-Response-Metadata", "Is-sent-as-headers-unary"))
 	grpc.SetTrailer(ctx, metadata.Pairs("Post-Response-Metadata", "Is-sent-as-trailers-unary"))
 
@@ -131,7 +137,6 @@ func (s *bookService) GetBook(ctx context.Context, bookQuery *library.GetBookReq
 }
 
 func (s *bookService) QueryBooks(bookQuery *library.QueryBooksRequest, stream library.BookService_QueryBooksServer) error {
-	println("GetBooks:", bookQuery.AuthorPrefix)
 	stream.SendHeader(metadata.Pairs("Pre-Response-Metadata", "Is-sent-as-headers-stream"))
 	for _, book := range books {
 		if strings.HasPrefix(book.Author, bookQuery.AuthorPrefix) {

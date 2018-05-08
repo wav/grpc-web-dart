@@ -36,14 +36,34 @@ class Client {
             credentials: const ChannelCredentials.insecure()));
     stub = new BookServiceClient(channel);
     // Run all of the demos in order.
+    await runGetBook();
     await runGetBooks();
     await channel.shutdown();
   }
 
-  Future<Null> runGetBooks() async {
+  Future<Null> runGetBook() async {
+    Book book;
     try {
-      final call = stub.getBook(new GetBookRequest()..isbn = new Int64(60929871),
-          options: new CallOptions(metadata: {'peer': 'Verner'}));
+      final call = stub.getBook(new GetBookRequest()..isbn = new Int64(60929871));
+      call.headers.then((headers) {
+        print('Received header metadata: $headers');
+      });
+      call.trailers.then((trailers) {
+        print('Received trailer metadata: $trailers');
+      });
+      book = await call;
+    } on GrpcError catch (e) {
+      assert(e.code == StatusCode.ok, "$e");
+    } catch(e) {
+      print(e);
+    }
+    assert(book.author == "Aldous Huxley");
+  }
+
+  Future<Null> runGetBooks() async {
+    List<Book> books;
+    try {
+      final call = stub.queryBooks(new QueryBooksRequest()..authorPrefix = "G");
       call.headers.then((headers) {
         print('Received header metadata: $headers');
       });
@@ -51,13 +71,15 @@ class Client {
         print('Received trailer metadata: $trailers');
       });
       final response = await call;
-      print('Echo response: ${response.author}');
+      books = await response.toList();
     } on GrpcError catch (e) {
       assert(e.code == StatusCode.ok, "$e");
     } catch(e) {
       print(e);
     }
-
+    var expected = "George Orwell,George Orwell";
+    var actual = books.map((b) => b.author).join(",");
+    assert(expected == actual, "$expected != $actual");
   }
 }
 
