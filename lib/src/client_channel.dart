@@ -1,8 +1,8 @@
 import 'dart:async';
 
 import 'package:grpc/grpc.dart';
-import 'package:grpc_web/src/call.dart';
-import 'package:grpc_web/src/connection.dart';
+import 'call.dart';
+import 'connection.dart';
 
 class WebClientChannel extends ClientChannel {
   WebClientChannel(String host, {int port, ChannelOptions options})

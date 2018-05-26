@@ -1,11 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:grpc/grpc.dart';
-import 'package:grpc_web/src/connection.dart';
-import 'package:grpc_web/src/stream_parser.dart';
-import 'package:http/http.dart' as http;
+import 'connection.dart';
+import 'stream_parser.dart';
+import 'util.dart';
 
 class WebClientCall<Q, R> extends ClientCall<Q, R> {
   final ClientMethod<Q, R> _method;
@@ -30,82 +31,158 @@ class WebClientCall<Q, R> extends ClientCall<Q, R> {
   }
 
   Future<Null> _invokeRequest(WebClientConnection c) async {
-    final url = Uri.parse("http://${c.host}:${c.port}${path}");
     this._requests.listen((message) async {
-      var serialized = _method.requestSerializer(message);
-      final headers = <String, String>{}
-        ..addAll(options.metadata)
-        ..addAll({
-          "Content-Type": "application/grpc-web+proto",
-          "Accept": "application/grpc-web+proto",
-        })
-        ..map((k, v) => new MapEntry(ascii.encode(k), ascii.encode(v)));
-      final req = new http.Request("POST", url)
-        ..headers.addAll(headers)
-        ..bodyBytes = _encodeRequest(serialized);
-      http.StreamedResponse resp;
       try {
-        resp = await req.send().timeout(c.options.idleTimeout);
+        final url = Uri.parse(
+            "http${c.options.credentials.isSecure ? "s" : ""}://${c.host}:${c
+                .port}$path");
+        final serialized = _method.requestSerializer(message);
+        final encoded = encodeRequest(serialized);
+        var headers = <String, String>{};
+        for (var provider in options.metadataProviders) {
+          await provider(headers, url.toString());
+        }
+        headers = headers
+          ..addAll(options.metadata)
+          ..addAll({
+            "Content-Type": "application/grpc-web+proto",
+            "Accept": "application/grpc-web+proto",
+            "Content-Length": encoded.lengthInBytes.toString(),
+          })
+          ..map((k, v) => new MapEntry(ascii.encode(k), ascii.encode(v)));
+
+        // disable http2 for this request otherwise the TLS handshake will fail. eg. "bogus greeting" error
+        final secCtx =  c.options.credentials.securityContext
+          ..setAlpnProtocols(['http/1.1'], false);
+        final cli =
+            new HttpClient(context: secCtx);
+        if (c.options.credentials.onBadCertificate != null) {
+          cli.badCertificateCallback = (cert, host, _) =>
+              c.options.credentials.onBadCertificate(cert, host);
+        }
+        print("POST $url");
+        final req = await cli.openUrl("POST", url);
+        for (var key in headers.keys) {
+          print("request header: $key: ${headers[key]}");
+          req.headers.add(key, headers[key]);
+        }
+        req.add(encoded);
+        final resp = await req.close().timeout(c.options.idleTimeout);
+        await _onResponse(resp, c.options.idleTimeout);
       } on TimeoutException {
-        _responseError(new GrpcError.deadlineExceeded(
-            "Request took longer than ${c.options.idleTimeout
-                .inMilliseconds}ms"));
+        _setTimeoutError(c.options.idleTimeout);
+        return;
+      } catch (e, s) {
+        print("$e $s");
+        _responseError(new GrpcError.aborted("$e"));
         return;
       }
-      await _onResponse(resp);
     });
   }
 
-  Future<Null> _onResponse(http.StreamedResponse value) async {
-    _headers.complete(value.headers);
-    var bytes = await value.stream.toBytes();
-    var parser = new GrpcWebStreamParser();
-    var messages = parser.parse(bytes);
-    for (var m in messages) {
-      if (!m.isTrailer) {
-        if (_trailers.isCompleted) {
-          _responseError(
-              new GrpcError.unimplemented('Received data after trailers'));
-          return;
-        }
-        if (!m.isEmpty) {
-          var parsed = _method.responseDeserializer(m.message);
-          _responses.add(parsed);
-        }
-      } else if (m.isTrailer) {
-        if (_trailers.isCompleted) {
-          _responseError(
-              new GrpcError.unimplemented('Received multiple trailers'));
-          return;
-        }
-        if (!m.isEmpty) {
-          try {
-            var metadata = _decodeMetadata(m.message);
-            if (metadata.containsKey('grpc-status')) {
-              final status = int.parse(metadata['grpc-status']);
-              final message = metadata['grpc-message'];
-              if (status != 0) {
-                _responseError(new GrpcError.custom(status, message));
-              }
-            }
-            _trailers.complete(metadata);
-          } catch (e) {
-            _responseError(
-                new GrpcError.unimplemented('Failed to decode trailers'));
-            return;
-          } finally {
-            if (!_trailers.isCompleted) {
-              _trailers.complete(const {});
-            }
-          }
-        } else {
-          _responseError(
-              new GrpcError.unimplemented('Failed to decode trailers'));
+  void _setTimeoutError(Duration idleTimeout) {
+    _responseError(new GrpcError.deadlineExceeded(
+        "Request took longer than ${idleTimeout.inMilliseconds}ms"));
+  }
+
+  Future<Uint8List> _readResponse(
+      HttpClientResponse response, Duration idleTimeout) async {
+    try {
+      return new Uint8List.fromList(await response
+          .fold(<int>[], (a, b) => a..addAll(b)).timeout(idleTimeout));
+    } on TimeoutException {
+      _setTimeoutError(idleTimeout);
+      return null;
+    } catch (e, s) {
+      print("$e $s");
+      _responseError(new GrpcError.aborted("$e"));
+      return null;
+    }
+  }
+
+  Future<Null> _readHeaders(HttpClientResponse response) async {
+    try {
+      final headers = <String, String>{};
+      response.headers.forEach((k, v) {
+        final val = v.join(",");
+        print("response header: $k: $val");
+        headers[k] = val;
+      });
+      _headers.complete(headers);
+      if (headers.containsKey('grpc-status')) {
+        final status = int.parse(headers['grpc-status']);
+        final message = headers['grpc-message'];
+        if (status != 0) {
+          _responseError(new GrpcError.custom(status, message));
           return;
         }
       }
+    } catch (e, s) {
+      print("$e $s");
+      _responseError(new GrpcError.aborted("$e"));
+      return;
     }
-    _responses.close();
+  }
+
+  void _readTrailer(Message m) {
+    if (_trailers.isCompleted) {
+      _responseError(new GrpcError.unimplemented('Received multiple trailers'));
+      return;
+    }
+    try {
+      var metadata = decodeMetadata(m.message);
+      if (metadata.containsKey('grpc-status')) {
+        final status = int.parse(metadata['grpc-status']);
+        final message = metadata['grpc-message'];
+        if (status != 0) {
+          _responseError(new GrpcError.custom(status, message));
+        }
+      }
+      _trailers.complete(metadata);
+    } catch (e) {
+      _responseError(new GrpcError.unimplemented('Failed to decode trailers'));
+      return;
+    } finally {
+      if (!_trailers.isCompleted) {
+        _trailers.complete(const {});
+      }
+    }
+  }
+
+  void _readMessage(Message m) {
+    if (_trailers.isCompleted) {
+      _responseError(
+          new GrpcError.unimplemented('Received data after trailers'));
+      return;
+    }
+    final parsed = _method.responseDeserializer(m.message);
+    _responses.add(parsed);
+    print("$parsed");
+  }
+
+  Future<Null> _onResponse(
+      HttpClientResponse response, Duration idleTimeout) async {
+    await _readHeaders(response);
+
+    var bytes = await _readResponse(response, idleTimeout);
+    if (_responses.isClosed) return;
+
+    if (bytes.length == 0) {
+      print("grpc_web: no data received, closing");
+      _responses.close();
+      _trailers.complete(const {});
+      return;
+    }
+    try {
+      new GrpcWebStreamParser()
+          .parse(bytes)
+          .forEach((m) => m.isTrailer ? _readTrailer(m) : _readMessage(m));
+    } catch (e, s) {
+      print("$e $s");
+      _responseError(new GrpcError.aborted("$e"));
+    } finally {
+      _responses.close();
+    }
   }
 
   @override
@@ -118,79 +195,11 @@ class WebClientCall<Q, R> extends ClientCall<Q, R> {
   Future<Map<String, String>> get trailers => _trailers.future;
 
   void _responseError(GrpcError error) {
-    _responses.addError(error);
-    _responses.close();
-  }
-}
-
-/**
- * Encode the grpc-web request
- *
- * @private
- * @param {!Uint8Array} serialized The serialized proto payload
- * @return {!Uint8Array} The application/grpc-web padded request
- */
-Uint8List _encodeRequest(List<int> serialized) {
-  var len = serialized.length;
-  var bytesArray = [0, 0, 0, 0];
-  var payload = new ByteData(5 + len).buffer;
-  for (var i = 3; i >= 0; i--) {
-    bytesArray[i] = (len % 256);
-    len = (len & 0xFFFFFFFF) >> 8;
-  }
-  new Uint8List.view(payload, 1, 4).setAll(0, bytesArray);
-  new Uint8List.view(payload, 5, serialized.length).setAll(0, serialized);
-  return payload.asUint8List();
-}
-
-class _CharCode {
-  static const int LF = 10;
-  static const int CR = 13;
-  static const int COLON = 58;
-}
-
-Map<String, String> _decodeMetadata(List<int> data) {
-  var m = <String, String>{};
-  var state = _CharCode.LF;
-  var window = <int>[];
-  String header;
-  for (var c in data) {
-    switch (state) {
-      case _CharCode.LF:
-        switch (c) {
-          case _CharCode.COLON:
-            header = ascii.decode(window).toLowerCase();
-            window = [];
-            state = _CharCode.COLON;
-            break;
-          default:
-            window.add(c);
-        }
-        break;
-      case _CharCode.CR:
-        switch (c) {
-          case _CharCode.LF:
-            state = _CharCode.LF;
-            break;
-          default:
-            throw new StateError("invalid header data");
-        }
-        break;
-      case _CharCode.COLON:
-        switch (c) {
-          case _CharCode.CR:
-            m[header] = ascii.decode(window);
-            window = [];
-            header = null;
-            state = _CharCode.CR;
-            break;
-          case _CharCode.LF:
-            throw new StateError("invalid header data");
-          default:
-            window.add(c);
-        }
-        break;
+    if (!_headers.isCompleted) _headers.completeError(error);
+    if (!_responses.isClosed) {
+      _responses.addError(error);
+      _responses.close();
     }
+    if (!_trailers.isCompleted) _trailers.completeError(error);
   }
-  return m;
 }

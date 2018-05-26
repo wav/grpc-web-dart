@@ -1,1 +1,1 @@
-export "src/client_channel.dart";
+export "./src/client_channel.dart";

@@ -14,15 +14,27 @@
 // limitations under the License.
 
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:grpc/grpc.dart';
 import 'package:test/test.dart';
 
 import 'book_service/book_service.pbgrpc.dart';
 
-import 'package:grpc_web/grpc_web.dart';
+import '../lib/grpc_web.dart';
 
 import 'package:fixnum/fixnum.dart';
+
+ChannelCredentials credentials({bool secure}) {
+  final testHttps = Platform.environment["TEST_HTTPS"];
+  if (secure == null) {
+    secure = testHttps == "true";
+  }
+  if (!secure) return const ChannelCredentials.insecure();
+  return new ChannelCredentials.secure(
+      onBadCertificate: allowBadCertificates,
+  );
+}
 
 class Client {
   ClientChannel channel;
@@ -31,9 +43,9 @@ class Client {
   Future<Null> main(List<String> args) async {
     channel = new WebClientChannel('127.0.0.1',
         port: 9090,
-        options: const ChannelOptions(
-            idleTimeout: const Duration(milliseconds: 500),
-            credentials: const ChannelCredentials.insecure()));
+        options: new ChannelOptions(
+            idleTimeout: new Duration(milliseconds: 500),
+            credentials: credentials()));
     stub = new BookServiceClient(channel);
     // Run all of the demos in order.
     await runGetBook();

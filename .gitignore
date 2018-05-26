@@ -2,3 +2,6 @@
 .dart_tool
 *.iml
 _vendor*
+*.pem
+*.swp
+.DS_Store

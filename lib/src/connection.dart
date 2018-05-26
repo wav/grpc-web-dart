@@ -1,5 +1,5 @@
 import 'package:grpc/grpc.dart';
-import 'package:grpc_web/src/call.dart';
+import 'call.dart';
 
 class WebClientConnection extends ClientConnection {
   WebClientConnection(String host, int port, ChannelOptions options)

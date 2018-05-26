@@ -24,17 +24,14 @@ import (
 
 var (
 	enableTls       = flag.Bool("enable_tls", false, "Use TLS - required for HTTP2.")
-	tlsCertFilePath = flag.String("tls_cert_file", "../misc/localhost.crt", "Path to the CRT/PEM file.")
-	tlsKeyFilePath  = flag.String("tls_key_file", "../misc/localhost.key", "Path to the private key file.")
+	tlsCertFilePath = flag.String("tls_cert_file", "./cert.pem", "Path to the CRT/PEM file.")
+	tlsKeyFilePath  = flag.String("tls_key_file", "./key.pem", "Path to the private key file.")
 )
 
 func main() {
 	flag.Parse()
 
 	port := 9090
-	if *enableTls {
-		port = 9091
-	}
 
 	var unaryInterceptor grpc.UnaryServerInterceptor = func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
 		println("unary", info.FullMethod)
