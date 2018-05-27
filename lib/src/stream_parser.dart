@@ -110,9 +110,9 @@ class GrpcWebStreamParser {
     var pos = 0;
 
     void processFrameByte(int b) {
-      if ((b & FrameType.DATA) == FrameType.DATA) {
+      if (_isFrame(b, FrameType.DATA)) {
         _frame = b;
-      } else if ((b & FrameType.TRAILER) == FrameType.TRAILER) {
+      } else if (_isFrame(b, FrameType.TRAILER)) {
         _frame = b;
       } else {
         _setError(inputBytes, pos, "invalid frame byte");
@@ -122,15 +122,15 @@ class GrpcWebStreamParser {
       _countLengthBytes = 0;
     }
 
+    final lengthData = new Uint8List(4);
     void processLengthByte(int b) {
-      _countLengthBytes++;
-//      _length = (_length.toUnsigned(32) << 8) + b;
-      _length = (_length & 0x0000000000 << 8) + b;
-
+      lengthData[_countLengthBytes++] = b;
       if (_countLengthBytes == 4) {
         // no more length byte
+        _length = lengthData.buffer.asByteData().getUint32(0);
         _state = _ParserState.MESSAGE;
         _countMessageBytes = 0;
+        lengthData.setAll(0, [0, 0, 0, 0]);
         _messageBuffer = new Uint8List(_length);
 
         if (_length == 0) {
@@ -190,9 +190,9 @@ class Message {
     return "Message($_frameType, ${message?.length ?? 0})";
   }
 
-  bool get isTrailer => _frameType % 256 != 0;
+  bool get isTrailer => _isFrame(_frameType, FrameType.TRAILER);
 
-  bool get isEmpty => (message?.length ?? 0) == 0;
+  bool get isEmpty => message.length == 0;
 }
 
 class FrameType {
@@ -206,3 +206,5 @@ enum _ParserState {
   MESSAGE, // expecting more message bytes
   INVALID,
 }
+
+bool _isFrame(int b, int frameType) => (b.toUnsigned(8) & frameType) == frameType;
