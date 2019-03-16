@@ -17,7 +17,7 @@ import (
 	"strings"
 
 	proto "github.com/golang/protobuf/proto"
-	library "github.com/improbable-eng/grpc-web/example/go/_proto/examplecom/library"
+	library "github.com/improbable-eng/grpc-web/client/grpc-web-react-example/go/_proto/examplecom/library"
 	"github.com/improbable-eng/grpc-web/go/grpcweb"
 	"golang.org/x/net/context"
 )

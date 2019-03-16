@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:grpc/grpc.dart';
+
 import 'call.dart';
 import 'connection.dart';
 
@@ -17,10 +18,10 @@ class WebClientChannel extends ClientChannel {
   /// No further RPCs can be made on this channel. RPCs already in progress will
   /// be allowed to complete.
   @override
-  Future<Null> shutdown() {
+  Future<Null> shutdown() async {
     if (_isShutdown) return new Future.value();
     _isShutdown = true;
-    return _connection.shutdown();
+    await _connection.shutdown();
   }
 
   /// Terminates this channel.
@@ -28,9 +29,9 @@ class WebClientChannel extends ClientChannel {
   /// RPCs already in progress will be terminated. No further RPCs can be made
   /// on this channel.
   @override
-  Future<Null> terminate() {
+  Future<Null> terminate() async {
     _isShutdown = true;
-    return _connection.terminate();
+    await _connection.terminate();
   }
 
   /// Returns a connection to this [Channel]'s RPC endpoint.
