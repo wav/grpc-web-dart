@@ -3,9 +3,9 @@
 > Recently merged `grpc-web` support [#109](https://github.com/grpc/grpc-dart/pull/109) uses an `XhrTransport` suitable for the browser.
 > This project uses `'dart:io'` for a regular `HTTP transport` for non-brower clients.
 
-Although is a hack/experiment to get gRPC working over HTTP/1 with [https://github.com/improbable-eng/grpc-web](https://github.com/improbable-eng/grpc-web); it has been in use for a while using this setup.
+Although this is a hack/experiment to get gRPC working over HTTP/1 with [https://github.com/improbable-eng/grpc-web](https://github.com/improbable-eng/grpc-web); it has been in use for a while using this setup.
 
-It provides an implementation ClientChannel as suggested [grpc/grpc-dart - issue 43](https://github.com/grpc/grpc-dart/issues/43)
+It provides an implementation of ClientChannel as suggested [grpc/grpc-dart - issue 43](https://github.com/grpc/grpc-dart/issues/43)
 
 The message is unpacked using `grpcwebstreamparser.js` from [github.com/grpc/grpc-dart](https://github.com/grpc/grpc-web)
 
@@ -20,7 +20,7 @@ final channel = useHttp2 == true
 
 final client = BookServiceClient(channel);
 
-stub.getBook(new GetBookRequest()..isbn = new Int64(60929871));
+client.getBook(new GetBookRequest()..isbn = new Int64(60929871));
 ```
 
 ## Give it a spin

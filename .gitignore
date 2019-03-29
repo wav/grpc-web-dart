@@ -5,3 +5,5 @@ _vendor*
 *.pem
 *.swp
 .DS_Store
+build/
+.gradle/
