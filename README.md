@@ -1,11 +1,12 @@
-## gRPC *web* for dart over HTTP/1.1
+## gRPC *web* for dart over HTTP/1.1 for non-web clients.
 
-> Recently merged `grpc-web` support [#109](https://github.com/grpc/grpc-dart/pull/109) uses an `XhrTransport` suitable for the browser.
-> This project uses `'dart:io'` for a regular `HTTP transport` for non-brower clients.
+Why would you use this?
 
-Although this is a hack/experiment to get gRPC working over HTTP/1 with [https://github.com/improbable-eng/grpc-web](https://github.com/improbable-eng/grpc-web); it has been in use for a while using this setup.
+You have a non-browser (`'dart:io'`) client connecting with `HTTP/1.1` and a server that is serving the gRPC-Web protocol (`application/grpc-web+proto`).
 
-It provides an implementation of ClientChannel as suggested [grpc/grpc-dart - issue 43](https://github.com/grpc/grpc-dart/issues/43)
+For all other clients use https://github.com/grpc/grpc-dart 
+
+> Hint: Flutter web requires the server to serve gRPC-Web
 
 The message is unpacked using `grpcwebstreamparser.js` from [github.com/grpc/grpc-dart](https://github.com/grpc/grpc-web)
 
