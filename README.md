@@ -8,8 +8,6 @@ For all other clients use https://github.com/grpc/grpc-dart
 
 > Hint: Flutter web requires the server to serve gRPC-Web
 
-The message is unpacked using `grpcwebstreamparser.js` from [github.com/grpc/grpc-dart](https://github.com/grpc/grpc-web)
-
 Only regular RPC calls have been implemented.
 
 ## Sample Usage
@@ -17,7 +15,7 @@ Only regular RPC calls have been implemented.
 ```
 final channel = useHttp2 == true
       ? new ClientChannel(...)
-      : new WebClientChannel(...);
+      : new HttpClientChannel(...);
 
 final client = BookServiceClient(channel);
 
@@ -31,8 +29,3 @@ make serve &
 
 make test
 ```
-
-## TODO
-
-- Streaming
-- Create a `HTTP Transport` that fits well with the changes for `grpc-web` support [#109](https://github.com/grpc/grpc-dart/pull/109) in `grpc-dart`.
